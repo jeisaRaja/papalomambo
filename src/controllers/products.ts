@@ -28,5 +28,3 @@ export const createProduct = async (req:Request, res:Response) => {
     res.status(400).json(validate.errors);
   }
 }; 
-
-// AIzaSyDteBdafBxGW1aLKwtb4SOkKmYu9F7OBX8

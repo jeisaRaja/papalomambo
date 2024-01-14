@@ -91,14 +91,66 @@ export const sendEmployeeSignupLink = async (req: Request, res: Response, next: 
 // requires signup token received from email
 // request includes username and password
 // adds "verification pending" status to employee account, awaiting owner approval
-export const employeeSignup = async (req: Request, res: Response, next: NextFunction) => {
+const validateEmployeeSignup = ajv.compile({
+  type: 'object',
+  properties: {
+    username: { type: 'string' },
+    password: { type: 'string' },
+  },
+  required: ['username', 'password'],
+  additionalProperties: false,
+});
 
+export const employeeSignup = async (req: Request, res: Response, next: NextFunction) => {
+  if (!validateEmployeeSignup(req.body)) {
+    return res.status(400).send('Request payload is invalid');
+  }
+
+  const reqUser = await User.findById((req as any).user.id);
+
+  if (!reqUser || (!reqUser.roles.includes('admin') && !reqUser.roles.includes('owner'))) {
+    return res.status(400).send('not authorized');
+  }
+
+  const employeeAccount = await User.findOne({ username: req.body.username });
+  if (!employeeAccount || employeeAccount.verification !== 'none') {
+    return res.status(400).send('Request payload is invalid');
+  }
+
+  const hashPassword = bcrypt.hashSync(req.body.password, 20);
+  employeeAccount.password = hashPassword;
+  employeeAccount.verification = 'pending';
+  await employeeAccount.save();
 };
 
 // requires owner or admin role
 // adds "verification complete" status to employee account, allowing employee login
+const validateNewEmployee = ajv.compile({
+  type: 'object',
+  properties: {
+    username: { type: 'string' },
+  },
+  required: ['username'],
+  additionalProperties: false,
+})
 export const approveNewEmployee = async (req: Request, res: Response, next: NextFunction) => {
+  if (!validateNewEmployee(req.body)) {
+    return res.status(400).send('Request payload is invalid');
+  }
 
+  const reqUser = await User.findById((req as any).user.id);
+
+  if (!reqUser || (!reqUser.roles.includes('admin') && !reqUser.roles.includes('owner'))) {
+    return res.status(400).send('not authorized');
+  }
+
+  const employeeAccount = await User.findOne({ username: req.body.username })
+  if (!employeeAccount || employeeAccount.verification !== 'pending') {
+    return res.status(400).send('Request payload is invalid');
+  }
+
+  employeeAccount.verification = 'approved';
+  await employeeAccount.save();
 };
 
 const validateEmployeeLogin = ajv.compile({
@@ -121,8 +173,6 @@ export const employeeLogin = async (req: Request, res: Response, next: NextFunct
   if (!user) {
     return res.status(400).send('Request payload is invalid');
   }
-
-  console.log(bcrypt.hashSync('password', bcrypt.genSaltSync(10)));
 
   const match = bcrypt.compareSync(req.body.password, user.password as string);
   if (!match) {
